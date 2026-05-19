@@ -1,0 +1,13 @@
+.DS_Store
+
+.idea/
+.vscode/
+.claude/
+
+target/
+frontend/node_modules/
+frontend/dist/
+
+*.iml
+*.log
+*.local
