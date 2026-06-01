@@ -90,7 +90,12 @@ public final class AssignmentPlanner {
                 List<Interval> timeline = tracks.get(r.id());
                 if (overlapsAny(timeline, item.checkIn(), item.checkOut())) continue;
                 long gap = gapBefore(timeline, item.checkIn());
-                if (gap < bestGap) {
+                // Minimum gap maximises back-to-back utilisation; on a tie prefer
+                // the tighter-capacity room so larger rooms stay free for larger
+                // parties (best-fit), otherwise a feasible reshuffle can be missed.
+                if (gap < bestGap
+                        || (gap == bestGap && best != null
+                            && r.capacity() < best.capacity())) {
                     bestGap = gap;
                     best = r;
                 }
