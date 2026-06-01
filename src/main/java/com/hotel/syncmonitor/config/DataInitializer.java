@@ -24,10 +24,16 @@ public class DataInitializer implements ApplicationRunner {
         if (roomRepository.count() > 0) return;
 
         roomRepository.saveAll(List.of(
+            room("101", RoomType.SINGLE, 1),
+            room("102", RoomType.SINGLE, 1),
             room("201", RoomType.DOUBLE, 2),
             room("202", RoomType.DOUBLE, 2),
+            room("203", RoomType.DOUBLE, 2),
             room("301", RoomType.TWIN, 2),
-            room("401", RoomType.FAMILY, 4)
+            room("302", RoomType.TWIN, 2),
+            room("401", RoomType.FAMILY, 4),
+            room("402", RoomType.FAMILY, 4),
+            room("501", RoomType.SUITE, 3)
         ));
     }
 

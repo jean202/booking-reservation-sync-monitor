@@ -47,6 +47,29 @@ export interface Dashboard {
   averagePmsSyncDelayMinutes: number;
 }
 
+export type PlacementChange = "NEW" | "MOVED" | "UNCHANGED" | "LOCKED";
+
+export interface AssignmentPlanPlacement {
+  reservationId: number;
+  externalReservationId: string;
+  guestName: string;
+  roomId: number;
+  roomNumber: string;
+  checkInDate: string;
+  checkOutDate: string;
+  change: PlacementChange;
+  previousRoomNumber: string | null;
+}
+
+export interface AssignmentPlan {
+  feasible: boolean;
+  targetReservationId: number;
+  roomType: RoomType;
+  placements: AssignmentPlanPlacement[];
+  movedPlacements: AssignmentPlanPlacement[];
+  message: string;
+}
+
 export interface ImportResult {
   imported: number;
   updated: number;

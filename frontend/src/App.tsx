@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import type { Dashboard, Reservation, RoomCandidate } from "./types";
+import type { AssignmentPlan, Dashboard, Reservation, RoomCandidate } from "./types";
 
 export default function App() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -9,6 +9,9 @@ export default function App() {
   const [flash, setFlash] = useState<{ text: string; kind: "ok" | "err" } | null>(null);
   const [assigningId, setAssigningId] = useState<number | null>(null);
   const [candidates, setCandidates] = useState<RoomCandidate[]>([]);
+  const [autoAssignPlan, setAutoAssignPlan] = useState<AssignmentPlan | null>(null);
+  const [autoAssignTargetId, setAutoAssignTargetId] = useState<number | null>(null);
+  const [autoAssignLoading, setAutoAssignLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -60,6 +63,40 @@ export default function App() {
       const result = await api.assignRoom(assigningId, roomId);
       showFlash(`${result.roomNumber}호 배정 완료`, "ok");
       setAssigningId(null);
+      await refresh();
+    } catch (e) {
+      showFlash((e as Error).message, "err");
+    }
+  }
+
+  async function handleOpenAutoAssign(reservationId: number) {
+    setAutoAssignTargetId(reservationId);
+    setAutoAssignPlan(null);
+    setAutoAssignLoading(true);
+    try {
+      const plan = await api.previewAutoAssign(reservationId);
+      setAutoAssignPlan(plan);
+    } catch (e) {
+      showFlash((e as Error).message, "err");
+      setAutoAssignTargetId(null);
+    } finally {
+      setAutoAssignLoading(false);
+    }
+  }
+
+  async function handleCommitAutoAssign() {
+    if (autoAssignTargetId == null) return;
+    try {
+      const plan = await api.commitAutoAssign(autoAssignTargetId);
+      const moved = plan.movedPlacements.length;
+      showFlash(
+        moved > 0
+          ? `자동 배정 완료. ${moved}건 재배치됨.`
+          : "자동 배정 완료.",
+        "ok"
+      );
+      setAutoAssignTargetId(null);
+      setAutoAssignPlan(null);
       await refresh();
     } catch (e) {
       showFlash((e as Error).message, "err");
@@ -149,12 +186,21 @@ export default function App() {
                         ✓ {r.assignedRoomNumber}호
                       </span>
                     ) : (
-                      <button
-                        onClick={() => handleOpenAssign(r.id)}
-                        className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded"
-                      >
-                        객실 배정
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handleOpenAutoAssign(r.id)}
+                          className="px-3 py-1.5 text-xs bg-violet-100 hover:bg-violet-200 text-violet-800 rounded"
+                          title="같은 룸타입 내에서 재배치를 통해 자동 배정"
+                        >
+                          자동 배정
+                        </button>
+                        <button
+                          onClick={() => handleOpenAssign(r.id)}
+                          className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded"
+                        >
+                          수동 배정
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={() => handleAcknowledge(r.id)}
@@ -184,6 +230,19 @@ export default function App() {
           candidates={candidates}
           onClose={() => setAssigningId(null)}
           onPick={handleAssign}
+        />
+      )}
+
+      {autoAssignTargetId != null && (
+        <AutoAssignModal
+          reservation={reservations.find((r) => r.id === autoAssignTargetId)!}
+          plan={autoAssignPlan}
+          loading={autoAssignLoading}
+          onClose={() => {
+            setAutoAssignTargetId(null);
+            setAutoAssignPlan(null);
+          }}
+          onConfirm={handleCommitAutoAssign}
         />
       )}
     </div>
@@ -315,5 +374,151 @@ function AssignModal({
         )}
       </div>
     </div>
+  );
+}
+
+function AutoAssignModal({
+  reservation,
+  plan,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  reservation: Reservation;
+  plan: AssignmentPlan | null;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  // Group placements by room number for timeline-style display.
+  const byRoom: Record<string, AssignmentPlan["placements"]> = {};
+  if (plan) {
+    for (const p of [...plan.placements].sort((a, b) =>
+      a.checkInDate.localeCompare(b.checkInDate)
+    )) {
+      (byRoom[p.roomNumber] ??= []).push(p);
+    }
+  }
+  const sortedRoomNumbers = Object.keys(byRoom).sort();
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-3xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold">자동 배정 (재배치 미리보기)</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              {reservation.externalReservationId} · {reservation.guestName} ·{" "}
+              {reservation.checkInDate} → {reservation.checkOutDate} ·{" "}
+              {reservation.roomType}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+
+        {loading && (
+          <div className="text-sm text-slate-400 py-8 text-center">
+            재배치 계획 계산 중...
+          </div>
+        )}
+
+        {!loading && plan && !plan.feasible && (
+          <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded p-4">
+            <div className="font-medium mb-1">재배치 불가</div>
+            <div>{plan.message}</div>
+          </div>
+        )}
+
+        {!loading && plan && plan.feasible && (
+          <>
+            <div
+              className={`text-sm rounded p-3 mb-4 border ${
+                plan.movedPlacements.length > 0
+                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                  : "bg-emerald-50 text-emerald-800 border-emerald-200"
+              }`}
+            >
+              {plan.message}
+            </div>
+
+            <div className="space-y-3">
+              {sortedRoomNumbers.map((roomNo) => (
+                <div
+                  key={roomNo}
+                  className="border border-slate-200 rounded-md overflow-hidden"
+                >
+                  <div className="bg-slate-50 px-3 py-2 text-sm font-medium">
+                    {roomNo}호
+                  </div>
+                  <ul className="divide-y divide-slate-100">
+                    {byRoom[roomNo].map((p) => (
+                      <li
+                        key={`${p.reservationId}-${roomNo}`}
+                        className="px-3 py-2 flex items-center justify-between text-sm"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ChangeBadge change={p.change} />
+                          <span className="font-mono text-xs text-slate-500">
+                            {p.externalReservationId}
+                          </span>
+                          <span>{p.guestName}</span>
+                          <span className="text-slate-500 text-xs">
+                            {p.checkInDate} → {p.checkOutDate}
+                          </span>
+                        </div>
+                        {p.change === "MOVED" && p.previousRoomNumber && (
+                          <span className="text-xs text-amber-700">
+                            ← {p.previousRoomNumber}호에서 이동
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded"
+              >
+                취소
+              </button>
+              <button
+                onClick={onConfirm}
+                className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded"
+              >
+                {plan.movedPlacements.length > 0
+                  ? `${plan.movedPlacements.length}건 재배치 후 배정`
+                  : "배정 확정"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChangeBadge({ change }: { change: AssignmentPlan["placements"][number]["change"] }) {
+  const style: Record<typeof change, string> = {
+    NEW: "bg-violet-100 text-violet-800 border-violet-200",
+    MOVED: "bg-amber-100 text-amber-800 border-amber-200",
+    UNCHANGED: "bg-slate-100 text-slate-600 border-slate-200",
+    LOCKED: "bg-slate-200 text-slate-700 border-slate-300",
+  };
+  const label: Record<typeof change, string> = {
+    NEW: "신규",
+    MOVED: "이동",
+    UNCHANGED: "유지",
+    LOCKED: "고정",
+  };
+  return (
+    <span className={`inline-flex px-2 py-0.5 text-xs rounded border ${style[change]}`}>
+      {label[change]}
+    </span>
   );
 }

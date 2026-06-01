@@ -2,6 +2,7 @@ package com.hotel.syncmonitor.repository;
 
 import com.hotel.syncmonitor.domain.entity.RoomAssignment;
 import com.hotel.syncmonitor.domain.enums.AssignmentStatus;
+import com.hotel.syncmonitor.domain.enums.RoomType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -32,5 +33,18 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
             @Param("roomId") Long roomId,
             @Param("checkIn") LocalDate checkIn,
             @Param("checkOut") LocalDate checkOut
+    );
+
+    // All active (not yet checked-out) assignments for a given room type.
+    // Used by the auto-assign reshuffle planner to compute the timeline of each room.
+    @Query("""
+            SELECT ra FROM RoomAssignment ra
+            WHERE ra.room.roomType = :roomType
+              AND ra.assignmentStatus = 'ASSIGNED'
+              AND ra.assignedCheckOut > :today
+            """)
+    List<RoomAssignment> findActiveByRoomType(
+            @Param("roomType") RoomType roomType,
+            @Param("today") LocalDate today
     );
 }

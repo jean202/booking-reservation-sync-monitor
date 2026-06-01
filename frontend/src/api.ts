@@ -1,5 +1,6 @@
 import type {
   ApiError,
+  AssignmentPlan,
   Dashboard,
   ImportResult,
   Reservation,
@@ -26,6 +27,16 @@ export const api = {
   assignRoom: (reservationId: number, roomId: number) =>
     request<RoomAssignment>(
       `/api/reservations/${reservationId}/assign-room/${roomId}`,
+      { method: "POST" }
+    ),
+  previewAutoAssign: (reservationId: number) =>
+    request<AssignmentPlan>(
+      `/api/reservations/${reservationId}/auto-assign/preview`,
+      { method: "POST" }
+    ),
+  commitAutoAssign: (reservationId: number) =>
+    request<AssignmentPlan>(
+      `/api/reservations/${reservationId}/auto-assign/commit`,
       { method: "POST" }
     ),
   acknowledge: (reservationId: number) =>
