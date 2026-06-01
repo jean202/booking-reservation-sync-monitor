@@ -12,47 +12,23 @@
     </parent>
 
     <groupId>com.hotel</groupId>
-    <artifactId>booking-reservation-sync-monitor</artifactId>
+    <artifactId>hotel-platform</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>booking-reservation-sync-monitor</name>
-    <description>OTA Reservation Sync Monitor - Interview MVP</description>
+    <packaging>pom</packaging>
+    <name>hotel-platform</name>
+    <description>
+        Multi-module aggregator for the hotel platform.
+        sync-monitor: OTA→PMS reservation sync demo (interview MVP).
+        shift-helper: weekend hotel-shift utility (manual room assignment).
+    </description>
+
+    <modules>
+        <module>sync-monitor</module>
+        <module>shift-helper</module>
+    </modules>
 
     <properties>
         <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
-
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.3.0</version>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
 </project>
