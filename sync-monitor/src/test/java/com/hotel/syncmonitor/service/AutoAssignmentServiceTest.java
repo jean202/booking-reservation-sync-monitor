@@ -255,7 +255,6 @@ class AutoAssignmentServiceTest {
         assertStatus(() -> service.preview(999L), HttpStatus.NOT_FOUND);
     }
 
-    @Disabled("FINDINGS #3: 재배치 대상 예약의 인원수를 무시하고 정원이 작은 객실로 옮긴다")
     @Test
     void reshuffleNeverPlacesAPartyInARoomBelowItsSize() {
         Room small = roomRepository.save(room("201", RoomType.DOUBLE, 2));

@@ -109,12 +109,11 @@ public class AutoAssignmentService {
     }
 
     private AssignmentPlanDto computePlan(Reservation target, LocalDate today) {
-        List<Room> rooms = roomRepository.findByRoomTypeAndStatus(target.getRoomType(), RoomStatus.ACTIVE)
-                .stream()
-                .filter(rm -> rm.getCapacity() >= target.getGuestCount())
-                .toList();
+        // All active rooms of the type are candidates; capacity is checked per
+        // reservation during placement, since moved guests have their own party size.
+        List<Room> rooms = roomRepository.findByRoomTypeAndStatus(target.getRoomType(), RoomStatus.ACTIVE);
 
-        if (rooms.isEmpty()) {
+        if (rooms.stream().noneMatch(rm -> rm.getCapacity() >= target.getGuestCount())) {
             return new AssignmentPlanDto(false, target.getId(), target.getRoomType(),
                     List.of(), List.of(),
                     "No active rooms of type " + target.getRoomType()
@@ -156,6 +155,7 @@ public class AutoAssignmentService {
             Room best = null;
             long bestGap = Long.MAX_VALUE;
             for (Room rm : rooms) {
+                if (rm.getCapacity() < r.getGuestCount()) continue;
                 List<Interval> timeline = tracks.get(rm.getId());
                 if (overlapsAny(timeline, r.getCheckInDate(), r.getCheckOutDate())) continue;
                 long gap = gapBefore(timeline, r.getCheckInDate());
