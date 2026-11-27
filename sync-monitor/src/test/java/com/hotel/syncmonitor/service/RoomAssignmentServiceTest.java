@@ -237,6 +237,20 @@ class RoomAssignmentServiceTest {
         assertThat(a.getAssignmentStatus()).isEqualTo(AssignmentStatus.ASSIGNED);
     }
 
+    @Disabled("FINDINGS #5: 채널에서 취소된 예약의 객실 배정이 해제되지 않아 객실을 계속 점유한다")
+    @Test
+    void cancelledReservationNoLongerBlocksItsRoom() {
+        Room room201 = roomRepository.save(room("201", RoomType.DOUBLE));
+        Reservation cancelled = reservationRepository.save(reservation("BKG-001", IN, OUT));
+        roomAssignmentService.assignRoom(cancelled.getId(), room201.getId());
+        cancelled.setReservationStatus(ReservationStatus.CANCELLED);
+        reservationRepository.save(cancelled);
+        Reservation next = reservationRepository.save(reservation("BKG-002", IN, OUT));
+
+        assertThat(roomAssignmentService.getAvailableRooms(next.getId()))
+                .extracting(RoomCandidateDto::roomNumber).containsExactly("201");
+    }
+
     private static void assertStatus(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, HttpStatus status) {
         assertThatThrownBy(call)
                 .isInstanceOf(ResponseStatusException.class)
