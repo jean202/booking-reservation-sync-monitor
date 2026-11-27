@@ -20,7 +20,8 @@ import java.util.Map;
  * <p>Algorithm: greedy constrained interval graph coloring.
  * Already-checked-in placements are locked to their room and block its
  * timeline. The movable pool — pre-arrival placements plus the target —
- * is re-placed in check-in order, picking the room whose most recent
+ * is re-placed in check-in order (only if the target cannot fit while every
+ * pre-arrival guest keeps their room), picking the room whose most recent
  * prior checkout is closest to this check-in (= minimum gap), which
  * maximises back-to-back utilisation.
  */
@@ -69,8 +70,6 @@ public final class AssignmentPlanner {
         }
 
         // Pool: pre-arrival movables + target reservation.
-        record PoolItem(Long reservationId, String guestName, int guestCount,
-                         LocalDate checkIn, LocalDate checkOut, Long previousRoomId) {}
         List<PoolItem> pool = new ArrayList<>();
         for (ActivePlacement p : movable) {
             pool.add(new PoolItem(p.reservationId(), p.guestName(), p.guestCount(),
@@ -80,33 +79,21 @@ public final class AssignmentPlanner {
                 target.checkIn(), target.checkOut(), null));
         pool.sort(Comparator.comparing(PoolItem::checkIn));
 
-        // Greedy placement.
-        Map<Long, Long> chosenRoom = new HashMap<>();
-        for (PoolItem item : pool) {
-            Room best = null;
-            long bestGap = Long.MAX_VALUE;
-            for (Room r : rooms) {
-                if (r.capacity() < item.guestCount()) continue;
-                List<Interval> timeline = tracks.get(r.id());
-                if (overlapsAny(timeline, item.checkIn(), item.checkOut())) continue;
-                long gap = gapBefore(timeline, item.checkIn());
-                // Minimum gap maximises back-to-back utilisation; on a tie prefer
-                // the tighter-capacity room so larger rooms stay free for larger
-                // parties (best-fit), otherwise a feasible reshuffle can be missed.
-                if (gap < bestGap
-                        || (gap == bestGap && best != null
-                            && r.capacity() < best.capacity())) {
-                    bestGap = gap;
-                    best = r;
+        // First try to fit the target while every pre-arrival guest keeps their
+        // room; reshuffle only when that is impossible, so nobody moves needlessly.
+        Map<Long, Long> chosenRoom = placeKeepingCurrentRooms(pool, rooms, roomById, copy(tracks));
+        if (chosenRoom == null) {
+            chosenRoom = new HashMap<>();
+            for (PoolItem item : pool) {
+                Room best = pickRoom(item, rooms, tracks);
+                if (best == null) {
+                    return AssignmentPlan.infeasible(target.id(),
+                            "No feasible placement even with reshuffle for guest "
+                                    + item.guestName() + ".");
                 }
+                chosenRoom.put(item.reservationId(), best.id());
+                tracks.get(best.id()).add(new Interval(item.checkIn(), item.checkOut()));
             }
-            if (best == null) {
-                return AssignmentPlan.infeasible(target.id(),
-                        "No feasible placement even with reshuffle for guest "
-                                + item.guestName() + ".");
-            }
-            chosenRoom.put(item.reservationId(), best.id());
-            tracks.get(best.id()).add(new Interval(item.checkIn(), item.checkOut()));
         }
 
         // Build placements: NEW / MOVED / UNCHANGED for the movable pool,
@@ -149,6 +136,61 @@ public final class AssignmentPlanner {
                 ? "Assignable without moving any pre-arrival guest."
                 : "Assignable. " + moved.size() + " pre-arrival assignment(s) will move.";
         return new AssignmentPlan(true, target.id(), placements, moved, message);
+    }
+
+    private record PoolItem(Long reservationId, String guestName, int guestCount,
+                            LocalDate checkIn, LocalDate checkOut, Long previousRoomId) {}
+
+    /** Returns null when some pre-arrival guest cannot stay or the target does not fit. */
+    private static Map<Long, Long> placeKeepingCurrentRooms(List<PoolItem> pool, List<Room> rooms,
+                                                            Map<Long, Room> roomById,
+                                                            Map<Long, List<Interval>> tracks) {
+        Map<Long, Long> chosen = new HashMap<>();
+        for (PoolItem item : pool) {
+            if (item.previousRoomId() == null) continue;
+            Room current = roomById.get(item.previousRoomId());
+            if (current == null || current.capacity() < item.guestCount()
+                    || overlapsAny(tracks.get(current.id()), item.checkIn(), item.checkOut())) {
+                return null;
+            }
+            chosen.put(item.reservationId(), current.id());
+            tracks.get(current.id()).add(new Interval(item.checkIn(), item.checkOut()));
+        }
+        for (PoolItem item : pool) {
+            if (item.previousRoomId() != null) continue;
+            Room best = pickRoom(item, rooms, tracks);
+            if (best == null) return null;
+            chosen.put(item.reservationId(), best.id());
+            tracks.get(best.id()).add(new Interval(item.checkIn(), item.checkOut()));
+        }
+        return chosen;
+    }
+
+    private static Room pickRoom(PoolItem item, List<Room> rooms, Map<Long, List<Interval>> tracks) {
+        Room best = null;
+        long bestGap = Long.MAX_VALUE;
+        for (Room r : rooms) {
+            if (r.capacity() < item.guestCount()) continue;
+            List<Interval> timeline = tracks.get(r.id());
+            if (overlapsAny(timeline, item.checkIn(), item.checkOut())) continue;
+            long gap = gapBefore(timeline, item.checkIn());
+            // Minimum gap maximises back-to-back utilisation; on a tie prefer
+            // the tighter-capacity room so larger rooms stay free for larger
+            // parties (best-fit), otherwise a feasible reshuffle can be missed.
+            if (gap < bestGap
+                    || (gap == bestGap && best != null
+                        && r.capacity() < best.capacity())) {
+                bestGap = gap;
+                best = r;
+            }
+        }
+        return best;
+    }
+
+    private static Map<Long, List<Interval>> copy(Map<Long, List<Interval>> tracks) {
+        Map<Long, List<Interval>> copy = new HashMap<>();
+        tracks.forEach((roomId, timeline) -> copy.put(roomId, new ArrayList<>(timeline)));
+        return copy;
     }
 
     private static boolean overlapsAny(List<Interval> timeline,

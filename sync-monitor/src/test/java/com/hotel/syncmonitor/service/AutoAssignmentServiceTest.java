@@ -15,7 +15,6 @@ import com.hotel.syncmonitor.repository.RoomAssignmentRepository;
 import com.hotel.syncmonitor.repository.RoomRepository;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -271,7 +270,6 @@ class AutoAssignmentServiceTest {
                 assertThat(capacity.get(p.roomId())).isGreaterThanOrEqualTo(guests.get(p.externalReservationId())));
     }
 
-    @Disabled("FINDINGS #7: 현재 방을 유지해도 되는 사전도착 배정을 불필요하게 MOVED로 옮긴다")
     @Test
     void preArrivalAssignmentKeepsItsRoomWhenNoMoveIsNeeded() {
         roomRepository.save(doubleRoom("201"));

@@ -133,7 +133,6 @@ class AssignmentPlannerTest {
         assertThat(plan.message()).isEqualTo("Assignable without moving any pre-arrival guest.");
     }
 
-    @org.junit.jupiter.api.Disabled("FINDINGS #7: 현재 방을 유지해도 되는 사전도착 배정을 불필요하게 MOVED로 옮긴다")
     @Test
     void pre_arrival_guest_keeps_its_room_when_no_move_is_needed() {
         Room r101 = new Room(1L, "101", 2, true);

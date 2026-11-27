@@ -32,7 +32,8 @@ import java.util.Map;
  *   <li>Each room of a given type is a "track" (timeline of intervals).</li>
  *   <li>Already-checked-in assignments are <b>locked</b> to their current room.</li>
  *   <li>Pre-arrival assignments + the target reservation form the
- *       <b>movable pool</b>, which is re-placed greedily.</li>
+ *       <b>movable pool</b>. If the target fits while every pre-arrival guest
+ *       keeps their room, nobody moves; otherwise the pool is re-placed greedily.</li>
  *   <li>For each reservation (sorted by check-in date) we pick the room whose
  *       most recent occupied checkout is closest to this check-in
  *       (= minimum gap), maximizing back-to-back utilization.</li>
@@ -139,39 +140,32 @@ public class AutoAssignmentService {
         }
 
         // 2) Pool = pre-arrival movable + target. Sort by check-in date.
-        record Item(Long reservationId, Reservation reservation, RoomAssignment existing) {}
         List<Item> pool = new ArrayList<>();
         for (RoomAssignment a : movable) {
-            pool.add(new Item(a.getReservation().getId(), a.getReservation(), a));
+            pool.add(new Item(a.getReservation(), a));
         }
-        pool.add(new Item(target.getId(), target, null));
+        pool.add(new Item(target, null));
         pool.sort(Comparator.comparing(it -> it.reservation().getCheckInDate()));
 
-        // 3) Greedy placement: prefer the room whose most recent prior checkout
-        //    is closest to this check-in (minimum gap → maximum utilization).
-        Map<Long, Long> assignedRoomByReservation = new HashMap<>();
-        for (Item it : pool) {
-            Reservation r = it.reservation();
-            Room best = null;
-            long bestGap = Long.MAX_VALUE;
-            for (Room rm : rooms) {
-                if (rm.getCapacity() < r.getGuestCount()) continue;
-                List<Interval> timeline = tracks.get(rm.getId());
-                if (overlapsAny(timeline, r.getCheckInDate(), r.getCheckOutDate())) continue;
-                long gap = gapBefore(timeline, r.getCheckInDate());
-                if (gap < bestGap) {
-                    bestGap = gap;
-                    best = rm;
+        // 3) First try to fit the target while every pre-arrival guest keeps
+        //    their room; reshuffle only when that is impossible.
+        Map<Long, Long> assignedRoomByReservation = placeKeepingCurrentRooms(pool, rooms, copy(tracks));
+        if (assignedRoomByReservation == null) {
+            // Greedy reshuffle: prefer the room whose most recent prior checkout
+            // is closest to this check-in (minimum gap → maximum utilization).
+            assignedRoomByReservation = new HashMap<>();
+            for (Item it : pool) {
+                Reservation r = it.reservation();
+                Room best = pickRoom(r, rooms, tracks);
+                if (best == null) {
+                    return new AssignmentPlanDto(false, target.getId(), target.getRoomType(),
+                            List.of(), List.of(),
+                            "No feasible placement even with reshuffle for reservation "
+                                    + r.getExternalReservationId() + ".");
                 }
+                assignedRoomByReservation.put(r.getId(), best.getId());
+                tracks.get(best.getId()).add(Interval.proposed(r));
             }
-            if (best == null) {
-                return new AssignmentPlanDto(false, target.getId(), target.getRoomType(),
-                        List.of(), List.of(),
-                        "No feasible placement even with reshuffle for reservation "
-                                + r.getExternalReservationId() + ".");
-            }
-            assignedRoomByReservation.put(r.getId(), best.getId());
-            tracks.get(best.getId()).add(Interval.proposed(r));
         }
 
         // 4) Build the plan: classify each placement as NEW / MOVED / UNCHANGED.
@@ -263,6 +257,57 @@ public class AutoAssignmentService {
     }
 
     // ----- timeline helpers -----
+
+    private record Item(Reservation reservation, RoomAssignment existing) {}
+
+    /** Returns null when some pre-arrival guest cannot stay or the target does not fit. */
+    private static Map<Long, Long> placeKeepingCurrentRooms(List<Item> pool, List<Room> rooms,
+                                                            Map<Long, List<Interval>> tracks) {
+        Map<Long, Long> chosen = new HashMap<>();
+        for (Item it : pool) {
+            if (it.existing() == null) continue;
+            Reservation r = it.reservation();
+            Room current = it.existing().getRoom();
+            List<Interval> timeline = tracks.get(current.getId());
+            if (timeline == null || current.getCapacity() < r.getGuestCount()
+                    || overlapsAny(timeline, r.getCheckInDate(), r.getCheckOutDate())) {
+                return null;
+            }
+            chosen.put(r.getId(), current.getId());
+            timeline.add(Interval.proposed(r));
+        }
+        for (Item it : pool) {
+            if (it.existing() != null) continue;
+            Reservation r = it.reservation();
+            Room best = pickRoom(r, rooms, tracks);
+            if (best == null) return null;
+            chosen.put(r.getId(), best.getId());
+            tracks.get(best.getId()).add(Interval.proposed(r));
+        }
+        return chosen;
+    }
+
+    private static Room pickRoom(Reservation r, List<Room> rooms, Map<Long, List<Interval>> tracks) {
+        Room best = null;
+        long bestGap = Long.MAX_VALUE;
+        for (Room rm : rooms) {
+            if (rm.getCapacity() < r.getGuestCount()) continue;
+            List<Interval> timeline = tracks.get(rm.getId());
+            if (overlapsAny(timeline, r.getCheckInDate(), r.getCheckOutDate())) continue;
+            long gap = gapBefore(timeline, r.getCheckInDate());
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = rm;
+            }
+        }
+        return best;
+    }
+
+    private static Map<Long, List<Interval>> copy(Map<Long, List<Interval>> tracks) {
+        Map<Long, List<Interval>> copy = new HashMap<>();
+        tracks.forEach((roomId, timeline) -> copy.put(roomId, new ArrayList<>(timeline)));
+        return copy;
+    }
 
     private static boolean overlapsAny(List<Interval> timeline, LocalDate checkIn, LocalDate checkOut) {
         if (timeline == null) return false;
