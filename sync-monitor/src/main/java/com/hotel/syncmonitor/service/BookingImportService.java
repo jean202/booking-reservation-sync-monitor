@@ -2,9 +2,13 @@ package com.hotel.syncmonitor.service;
 
 import com.hotel.syncmonitor.connector.BookingReservationConnector;
 import com.hotel.syncmonitor.domain.entity.Reservation;
+import com.hotel.syncmonitor.domain.entity.RoomAssignment;
+import com.hotel.syncmonitor.domain.enums.AssignmentStatus;
+import com.hotel.syncmonitor.domain.enums.ReservationStatus;
 import com.hotel.syncmonitor.dto.BookingReservationDto;
 import com.hotel.syncmonitor.dto.ImportResultDto;
 import com.hotel.syncmonitor.repository.ReservationRepository;
+import com.hotel.syncmonitor.repository.RoomAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +21,16 @@ public class BookingImportService {
 
     private final BookingReservationConnector connector;
     private final ReservationRepository reservationRepository;
+    private final RoomAssignmentRepository roomAssignmentRepository;
     private final SyncLogService syncLogService;
 
     public BookingImportService(BookingReservationConnector connector,
                                  ReservationRepository reservationRepository,
+                                 RoomAssignmentRepository roomAssignmentRepository,
                                  SyncLogService syncLogService) {
         this.connector = connector;
         this.reservationRepository = reservationRepository;
+        this.roomAssignmentRepository = roomAssignmentRepository;
         this.syncLogService = syncLogService;
     }
 
@@ -60,12 +67,16 @@ public class BookingImportService {
 
             } else {
                 Reservation res = existing.get();
+                boolean wasCancelled = res.getReservationStatus() == ReservationStatus.CANCELLED;
                 boolean changed = applyStatusUpdates(dto, res);
 
                 if (changed) {
                     reservationRepository.save(res);
                     syncLogService.record(dto.channel(), dto.externalReservationId(),
                             "UPDATED", "Reservation status updated.");
+                    if (!wasCancelled && res.getReservationStatus() == ReservationStatus.CANCELLED) {
+                        releaseAssignments(res);
+                    }
                     updated++;
                 } else {
                     skipped++;
@@ -77,6 +88,18 @@ public class BookingImportService {
                 imported, updated, skipped,
                 String.format("Import complete: %d imported, %d updated, %d skipped.", imported, updated, skipped)
         );
+    }
+
+    private void releaseAssignments(Reservation reservation) {
+        List<RoomAssignment> assigned = roomAssignmentRepository
+                .findByReservationIdAndAssignmentStatus(reservation.getId(), AssignmentStatus.ASSIGNED);
+        for (RoomAssignment a : assigned) {
+            a.setAssignmentStatus(AssignmentStatus.CANCELLED);
+            roomAssignmentRepository.save(a);
+            syncLogService.record(reservation.getChannel(), reservation.getExternalReservationId(),
+                    "ASSIGNMENT_RELEASED",
+                    "Room " + a.getRoom().getRoomNumber() + " released because the reservation was cancelled.");
+        }
     }
 
     private boolean applyStatusUpdates(BookingReservationDto dto, Reservation reservation) {

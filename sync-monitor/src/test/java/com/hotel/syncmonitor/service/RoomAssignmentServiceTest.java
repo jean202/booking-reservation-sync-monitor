@@ -237,7 +237,6 @@ class RoomAssignmentServiceTest {
         assertThat(a.getAssignmentStatus()).isEqualTo(AssignmentStatus.ASSIGNED);
     }
 
-    @Disabled("FINDINGS #5: 채널에서 취소된 예약의 객실 배정이 해제되지 않아 객실을 계속 점유한다")
     @Test
     void cancelledReservationNoLongerBlocksItsRoom() {
         Room room201 = roomRepository.save(room("201", RoomType.DOUBLE));

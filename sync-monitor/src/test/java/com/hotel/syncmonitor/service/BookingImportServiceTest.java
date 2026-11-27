@@ -7,6 +7,10 @@ import com.hotel.syncmonitor.domain.enums.*;
 import com.hotel.syncmonitor.dto.BookingReservationDto;
 import com.hotel.syncmonitor.dto.ImportResultDto;
 import com.hotel.syncmonitor.repository.ReservationRepository;
+import com.hotel.syncmonitor.repository.RoomAssignmentRepository;
+import com.hotel.syncmonitor.repository.RoomRepository;
+import com.hotel.syncmonitor.domain.entity.Room;
+import com.hotel.syncmonitor.domain.entity.RoomAssignment;
 import com.hotel.syncmonitor.repository.ReservationSyncLogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
@@ -19,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.hotel.syncmonitor.Fixtures.doubleRoom;
 import static com.hotel.syncmonitor.Fixtures.dto;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,6 +36,12 @@ class BookingImportServiceTest {
     @Autowired
     private ReservationSyncLogRepository syncLogRepository;
 
+    @Autowired
+    private RoomRepository roomRepository;
+
+    @Autowired
+    private RoomAssignmentRepository roomAssignmentRepository;
+
     private BookingImportService bookingImportService;
     private ReservationService reservationService;
     private FixedBookingConnector connector;
@@ -39,7 +50,7 @@ class BookingImportServiceTest {
     void setUp() {
         connector = new FixedBookingConnector(new ArrayList<>(List.of(reservationDto())));
         SyncLogService syncLogService = new SyncLogService(syncLogRepository);
-        bookingImportService = new BookingImportService(connector, reservationRepository, syncLogService);
+        bookingImportService = new BookingImportService(connector, reservationRepository, roomAssignmentRepository, syncLogService);
         reservationService = new ReservationService(reservationRepository, syncLogService, connector);
     }
 
@@ -139,6 +150,33 @@ class BookingImportServiceTest {
         ImportResultDto result = bookingImportService.importReservations();
 
         assertThat(result.message()).isEqualTo("Import complete: 1 imported, 0 updated, 1 skipped.");
+    }
+
+    @Test
+    void channelCancellationReleasesTheRoomAssignment() {
+        bookingImportService.importReservations();
+        Reservation saved = reservationRepository
+                .findByChannelAndExternalReservationId(OtaChannel.BOOKING_COM, "BKG-001").orElseThrow();
+        Room room = roomRepository.save(doubleRoom("201"));
+        RoomAssignment assignment = new RoomAssignment();
+        assignment.setReservation(saved);
+        assignment.setRoom(room);
+        assignment.setAssignedCheckIn(saved.getCheckInDate());
+        assignment.setAssignedCheckOut(saved.getCheckOutDate());
+        assignment = roomAssignmentRepository.save(assignment);
+
+        connector.reservations().set(0, dto(OtaChannel.BOOKING_COM, "BKG-001",
+                ReservationStatus.CANCELLED, PmsSyncStatus.IMPORTED_TO_PMS,
+                LocalDateTime.of(2026, 5, 18, 14, 6)));
+        bookingImportService.importReservations();
+
+        assertThat(roomAssignmentRepository.findById(assignment.getId()).orElseThrow().getAssignmentStatus())
+                .isEqualTo(AssignmentStatus.CANCELLED);
+        assertThat(roomAssignmentRepository.findOverlapping(room.getId(),
+                saved.getCheckInDate(), saved.getCheckOutDate())).isEmpty();
+        assertThat(syncLogRepository.findByExternalReservationIdOrderByCreatedAtDesc("BKG-001"))
+                .extracting(ReservationSyncLog::getEventType)
+                .contains("ASSIGNMENT_RELEASED");
     }
 
     @Test

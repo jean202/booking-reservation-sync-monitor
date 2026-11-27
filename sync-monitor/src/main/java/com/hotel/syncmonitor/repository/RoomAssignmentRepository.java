@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDate;
 import java.util.List;
 
+// Occupancy queries ignore assignments of cancelled reservations, even if not yet released.
 public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, Long> {
 
     List<RoomAssignment> findByReservationIdAndAssignmentStatus(Long reservationId, AssignmentStatus status);
@@ -18,6 +19,7 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
             SELECT ra.reservation.id, ra.room.roomNumber
             FROM RoomAssignment ra
             WHERE ra.assignmentStatus = 'ASSIGNED'
+              AND ra.reservation.reservationStatus <> 'CANCELLED'
             """)
     List<Object[]> findAssignedReservationIdAndRoomNumberPairs();
 
@@ -26,6 +28,7 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
             SELECT ra FROM RoomAssignment ra
             WHERE ra.room.id = :roomId
               AND ra.assignmentStatus = 'ASSIGNED'
+              AND ra.reservation.reservationStatus <> 'CANCELLED'
               AND ra.assignedCheckIn < :checkOut
               AND ra.assignedCheckOut > :checkIn
             """)
@@ -41,6 +44,7 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
             SELECT ra FROM RoomAssignment ra
             WHERE ra.room.roomType = :roomType
               AND ra.assignmentStatus = 'ASSIGNED'
+              AND ra.reservation.reservationStatus <> 'CANCELLED'
               AND ra.assignedCheckOut > :today
             """)
     List<RoomAssignment> findActiveByRoomType(

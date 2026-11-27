@@ -6,9 +6,9 @@
 
 | 모듈 | 기준선 | 최종 | skipped(버그 재현) | failures | errors |
 |---|---|---|---|---|---|
-| sync-monitor | 4 | 91 | 4 | 0 | 0 |
+| sync-monitor | 4 | 92 | 3 | 0 | 0 |
 | shift-helper | 5 | 56 | 2 | 0 | 0 |
-| **합계** | **9** | **147** | **6** | **0** | **0** |
+| **합계** | **9** | **148** | **5** | **0** | **0** |
 
 기준선은 전부 통과 상태였다.
 
@@ -45,17 +45,17 @@
 | 2 | sync-monitor | 수동 배정은 `IMPORTED_TO_PMS`만 허용해 `ACKNOWLEDGED` 예약은 409. 자동 배정은 둘 다 허용 → 규칙 불일치. acknowledge 후엔 수동 배정 불가. | `RoomAssignmentServiceTest#acknowledgedReservationCanBeAssignedManually` |
 | 3 | sync-monitor | **수정됨** — 자동 배정 재배치 시 객실 후보를 **대상 예약 인원**으로만 거르고, 옮겨지는 기존 예약의 인원은 확인하지 않는다 → 4인 예약이 2인실로 MOVED. (shift-helper planner는 항목별로 검사함) → 후보는 타입의 모든 활성 객실로 두고 배치 루프에서 예약별 정원을 검사하도록 고침. | `AutoAssignmentServiceTest#reshuffleNeverPlacesAPartyInARoomBelowItsSize`(활성화됨) |
 | 4 | sync-monitor | 대시보드 미배정·오버부킹 위험 집계가 `CONFIRMED`만 본다 → `MODIFIED` 예약이 빠진다. | `DashboardServiceTest#modifiedReservationStillCountsAsUnassignedAndRisk` |
-| 5 | sync-monitor | 채널에서 `CANCELLED`가 들어와도 기존 `RoomAssignment`가 `ASSIGNED`로 남아 객실을 계속 점유한다(후보·오버부킹·자동배정 모두 영향). | `RoomAssignmentServiceTest#cancelledReservationNoLongerBlocksItsRoom` |
+| 5 | sync-monitor | **수정됨** — 채널에서 `CANCELLED`가 들어와도 기존 `RoomAssignment`가 `ASSIGNED`로 남아 객실을 계속 점유한다(후보·오버부킹·자동배정 모두 영향). → import에서 예약이 `CANCELLED`로 바뀌면 `ASSIGNED` 배정을 `CANCELLED`로 해제하고 `ASSIGNMENT_RELEASED` 로그를 남긴다. 점유 조회 쿼리 3개도 취소된 예약의 배정을 무시한다(다른 경로로 취소돼도 안전). | `RoomAssignmentServiceTest#cancelledReservationNoLongerBlocksItsRoom`(활성화됨), `BookingImportServiceTest#channelCancellationReleasesTheRoomAssignment`(신규) |
 | 6 | shift-helper | 사용불가로 바뀐 객실에 있던 사전도착 배정이 MOVED로 나오지만 `previousRoomNumber`가 null(planner가 in-service 객실만 받음). | `AssignmentPlannerTest#moved_out_of_an_out_of_service_room_reports_previous_room_number` |
 | 7 | 양쪽 | **수정됨** — 재배치 planner가 사전도착 배정을 현재 방과 무관하게 처음부터 다시 놓아, 옮길 필요가 없어도 MOVED가 생긴다(동률 시 목록 첫 방 선택). 현장에서 불필요한 객실 이동 지시. → 먼저 모든 사전도착 배정을 현재 방에 둔 채 대상 예약만 배치해 보고, 불가할 때만 기존 greedy 재배치로 넘어가도록 고침. | `AssignmentPlannerTest#pre_arrival_guest_keeps_its_room_when_no_move_is_needed`, `AutoAssignmentServiceTest#preArrivalAssignmentKeepsItsRoomWhenNoMoveIsNeeded`(둘 다 활성화됨) |
 | 8 | shift-helper | 중복 객실 번호 등록 시 `DataIntegrityViolationException`이 처리되지 않아 500. | `ShiftHelperApiIntegrationTest#duplicateRoomNumberIsClientError` |
 
-후속 요청으로 #3(`AutoAssignmentService`)과 #7(`AutoAssignmentService`, shift-helper `AssignmentPlanner`)을 수정했다. 나머지는 미수정.
+후속 요청으로 #3(`AutoAssignmentService`), #5(`BookingImportService`, `RoomAssignmentRepository`), #7(`AutoAssignmentService`, shift-helper `AssignmentPlanner`)을 수정했다. 나머지는 미수정.
 
 ## 사람이 확인할 항목
 - #1·#2: `pmsSyncStatus`의 출처(채널 vs PMS 로컬)와 `ACKNOWLEDGED` 이후 허용 동작 정의.
 - #7 수정은 "이동 0으로 가능하면 이동 없음"까지만 보장한다. 재배치가 필요할 때 이동 수를 최소화하지는 않는다(greedy 그대로). sync-monitor와 shift-helper에 같은 알고리즘이 중복돼 있다. sync-monitor와 shift-helper에 같은 알고리즘이 중복돼 있다.
-- #5: 취소 시 배정 자동 해제 여부(import 시점 vs 별도 작업).
+- #5는 import 시점 해제를 택했다. 취소가 다시 `CONFIRMED`로 바뀌어도 배정은 자동 복구되지 않는다(재배정 필요).
 - `AutoAssignmentService`는 `LocalDate.now()`를 직접 써서 테스트가 "오늘 기준 상대 날짜"에 의존한다. shift-helper처럼 `Clock` 주입을 권장.
 - shift-helper `application.properties`의 `jdbc:h2:mem:shift;DB_CLOSE_DELAY=-1` + `ddl-auto=update`는 같은 JVM의 컨텍스트 간 데이터가 남는다. 통합 테스트는 `@Transactional` 롤백으로 격리했다.
 - 로컬은 JDK 21에서 검증. JDK 17은 CI에서 확인.
@@ -63,4 +63,4 @@
 ## 못 한 것
 - 프론트엔드(`frontend-shift`, `sync-monitor/frontend`) 테스트·CI — 범위 밖.
 - 커버리지 리포트(JaCoCo) — 새 의존성 추가를 피했다.
-- #3·#7 외 버그 수정.
+- #3·#5·#7 외 버그 수정.
