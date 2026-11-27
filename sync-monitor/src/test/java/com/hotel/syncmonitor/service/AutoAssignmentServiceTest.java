@@ -272,6 +272,21 @@ class AutoAssignmentServiceTest {
                 assertThat(capacity.get(p.roomId())).isGreaterThanOrEqualTo(guests.get(p.externalReservationId())));
     }
 
+    @Disabled("FINDINGS #7: 현재 방을 유지해도 되는 사전도착 배정을 불필요하게 MOVED로 옮긴다")
+    @Test
+    void preArrivalAssignmentKeepsItsRoomWhenNoMoveIsNeeded() {
+        roomRepository.save(doubleRoom("201"));
+        Room r202 = roomRepository.save(doubleRoom("202"));
+        assign(reservationRepository.save(doubleReservation("KIM", d(1), d(3))), r202);
+        Reservation target = reservationRepository.save(doubleReservation("T", d(3), d(5)));
+
+        AssignmentPlanDto plan = service.preview(target.getId());
+
+        assertThat(plan.feasible()).isTrue();
+        assertThat(placementOf(plan, "KIM").change()).isEqualTo("UNCHANGED");
+        assertThat(plan.movedPlacements()).isEmpty();
+    }
+
     // ---------- helpers ----------
 
     private RoomAssignment assign(Reservation r, Room room) {
