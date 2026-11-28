@@ -14,6 +14,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     Optional<Reservation> findByChannelAndExternalReservationId(OtaChannel channel, String externalReservationId);
 
     List<Reservation> findByReservationStatus(ReservationStatus status);
+    List<Reservation> findByReservationStatusNot(ReservationStatus status);
 
     List<Reservation> findByPmsSyncStatus(PmsSyncStatus pmsSyncStatus);
 

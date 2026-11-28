@@ -9,7 +9,6 @@ import com.hotel.syncmonitor.repository.ReservationSyncLogRepository;
 import com.hotel.syncmonitor.repository.RoomAssignmentRepository;
 import com.hotel.syncmonitor.repository.RoomRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -170,7 +169,6 @@ class DashboardServiceTest {
         assertThat(dashboardService.getDashboard().notImportedToPmsCount()).isEqualTo(1);
     }
 
-    @Disabled("FINDINGS #4: MODIFIED 상태 예약은 미배정·오버부킹 위험 집계에서 빠진다")
     @Test
     void modifiedReservationStillCountsAsUnassignedAndRisk() {
         Reservation modified = reservation("BKG-001", PmsSyncStatus.IMPORTED_TO_PMS, 5);

@@ -40,8 +40,13 @@ public class DashboardService {
         return new DashboardDto(total, unassigned, notImportedToPms, overbookingRisk, avgDelay);
     }
 
+    // CONFIRMED and MODIFIED are both live bookings that need a room; only CANCELLED is excluded.
+    private List<Reservation> activeReservations() {
+        return reservationRepository.findByReservationStatusNot(ReservationStatus.CANCELLED);
+    }
+
     private long countUnassigned() {
-        return reservationRepository.findByReservationStatus(ReservationStatus.CONFIRMED)
+        return activeReservations()
                 .stream()
                 .filter(r -> roomAssignmentRepository
                         .findByReservationIdAndAssignmentStatus(r.getId(), AssignmentStatus.ASSIGNED)
@@ -50,7 +55,7 @@ public class DashboardService {
     }
 
     private long detectOverbookingRisk() {
-        return reservationRepository.findByReservationStatus(ReservationStatus.CONFIRMED)
+        return activeReservations()
                 .stream()
                 .filter(r -> {
                     boolean alreadyAssigned = !roomAssignmentRepository
